@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://chessrep.studio/schemas/repertoire.schema.json",
+  "title": "ChessRepStudioDatabase",
+  "description": "Schema dati per ChessRep Studio: repertorio di aperture scacchistiche ad albero di varianti con commenti e metadati.",
+  "type": "object",
+  "required": ["version", "exportedAt", "openings"],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "const": 1
+    },
+    "exportedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "openings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/OpeningRepertoire"
+      }
+    }
+  },
+  "$defs": {
+    "RepertoireColor": {
+      "type": "string",
+      "enum": ["white", "black"]
+    },
+    "OpeningRepertoire": {
+      "type": "object",
+      "required": ["id", "name", "color", "rootId", "nodes", "createdAt", "updatedAt"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "folder": { "type": "string" },
+        "eco": { "type": "string" },
+        "description": { "type": "string" },
+        "color": { "$ref": "#/$defs/RepertoireColor" },
+        "rootId": { "type": "string", "minLength": 1 },
+        "nodes": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/MoveNode"
+          }
+        },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "MoveNode": {
+      "type": "object",
+      "required": ["id", "parentId", "san", "uci", "from", "to", "fen", "ply", "color", "comment", "childrenIds"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "parentId": { "type": ["string", "null"] },
+        "san": { "type": ["string", "null"] },
+        "uci": { "type": ["string", "null"] },
+        "from": { "type": ["string", "null"] },
+        "to": { "type": ["string", "null"] },
+        "fen": { "type": "string", "minLength": 1 },
+        "ply": { "type": "integer", "minimum": 0 },
+        "color": { "type": ["string", "null"], "enum": ["w", "b", null] },
+        "comment": { "type": "string" },
+        "lineName": {
+          "type": "string",
+          "description": "Nome opzionale della variante/linea associata a questo nodo o ramo."
+        },
+        "childrenIds": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Indice 0 rappresenta la linea principale; indici >= 1 rappresentano le sottovarianti."
+        }
+      }
+    }
+  }
+}

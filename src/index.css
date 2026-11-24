@@ -1,0 +1,32 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+    background-color: #161512;
+    color: #f5f5f4;
+  }
+}
+
+/* Scrollbar elegante stile dark studio */
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+::-webkit-scrollbar-track {
+  background: #161512;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #32302a;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #48453d;
+}
