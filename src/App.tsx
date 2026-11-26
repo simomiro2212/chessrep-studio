@@ -593,6 +593,7 @@ export function App() {
                 boardTheme={boardTheme}
                 onUpdateOpening={handleUpdateOpening}
                 onTrainOpening={launchTargetedTraining}
+                onNotify={(msg) => showToast(msg)}
               />
             ) : (
               <div className="flex flex-1 flex-col items-center justify-center rounded-2xl border border-dashed border-[#32302a] bg-[#1e1d1a]/60 p-8 text-center">

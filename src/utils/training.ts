@@ -16,14 +16,23 @@ export function shuffleArray<T>(items: T[]): T[] {
 
 export function buildTargetedQueue(
   opening: OpeningRepertoire,
-  specificLineId?: string | null
+  options?: {
+    lineIds?: string[] | null;
+    shuffleOrder?: boolean;
+  }
 ): TrainingLine[] {
   const lines = extractLines(opening);
-  if (specificLineId) {
-    const match = lines.find((l) => l.id === specificLineId);
-    return match ? [match] : lines;
+  let filtered = lines;
+
+  if (options?.lineIds && options.lineIds.length > 0) {
+    const idSet = new Set(options.lineIds);
+    const matches = lines.filter((l) => idSet.has(l.id));
+    if (matches.length > 0) {
+      filtered = matches;
+    }
   }
-  return lines;
+
+  return options?.shuffleOrder ? shuffleArray(filtered) : filtered;
 }
 
 export function buildShuffleQueue(

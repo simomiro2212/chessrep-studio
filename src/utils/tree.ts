@@ -243,6 +243,73 @@ export function deleteBranch(
 }
 
 /**
+ * Elimina una singola variante (foglia) risalendo fino al primo nodo condiviso
+ * con altre varianti (o fino alla radice se è l'unica linea dell'apertura).
+ */
+export function deleteVariantLine(
+  opening: OpeningRepertoire,
+  leafNodeId: string
+): { opening: OpeningRepertoire; fallbackNodeId: string } {
+  let cursor = opening.nodes[leafNodeId];
+  if (!cursor || cursor.id === opening.rootId) {
+    return { opening, fallbackNodeId: opening.rootId };
+  }
+
+  while (cursor.parentId && cursor.parentId !== opening.rootId) {
+    const parent = opening.nodes[cursor.parentId];
+    if (!parent || parent.childrenIds.length > 1) {
+      break;
+    }
+    cursor = parent;
+  }
+
+  return deleteBranch(opening, cursor.id);
+}
+
+/**
+ * Duplica una variante esistente creando un nuovo nodo foglia fratello con nome "(Copia)"
+ * così da poterla rinominare, modificare o annotare indipendentemente.
+ */
+export function duplicateVariantLine(
+  opening: OpeningRepertoire,
+  leafNodeId: string,
+  newName?: string
+): { opening: OpeningRepertoire; newLeafId: string } | null {
+  const leaf = opening.nodes[leafNodeId];
+  if (!leaf || !leaf.parentId) return null;
+  const parent = opening.nodes[leaf.parentId];
+  if (!parent) return null;
+
+  const existingLine = extractLines(opening).find((l) => l.id === leafNodeId);
+  const baseName = existingLine?.lineName || 'Variante';
+  const resolvedCopyName = newName?.trim() || `${baseName} (Copia)`;
+
+  const newLeafId = generateId();
+  const clonedLeaf: MoveNode = {
+    ...leaf,
+    id: newLeafId,
+    lineName: resolvedCopyName,
+    childrenIds: [],
+  };
+
+  return {
+    opening: {
+      ...opening,
+      nodes: {
+        ...opening.nodes,
+        [parent.id]: {
+          ...parent,
+          childrenIds: [...parent.childrenIds, newLeafId],
+        },
+        [newLeafId]: clonedLeaf,
+      },
+      updatedAt: new Date().toISOString(),
+    },
+    newLeafId,
+  };
+}
+
+/**
  * Promuove una variante a linea principale (sposta nodeId in posizione 0 nei figli del padre).
  */
 export function promoteVariation(

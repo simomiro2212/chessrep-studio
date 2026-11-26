@@ -8,22 +8,28 @@ import {
   ChevronsRight,
   Copy,
   Download,
+  FileUp,
   FlipVertical2,
+  FolderOpen,
   MessageSquare,
   Play,
   Sparkles,
   Tag,
+  X,
 } from 'lucide-react';
 import type { BoardThemeKey, OpeningRepertoire, TrainingLine } from '../types/repertoire';
 import { BOARD_THEMES } from './BoardThemes';
+import { ImportPgnIntoFolderModal } from './Modals';
 import { MoveTreePanel } from './MoveTreePanel';
-import { exportOpeningToPgn } from '../utils/pgn';
+import { exportOpeningToPgn, mergePgnIntoOpening } from '../utils/pgn';
 import { soundEngine } from '../utils/sound';
 import { downloadTextFile } from '../utils/storage';
 import {
   addOrSelectMove,
   countOpeningNodes,
   deleteBranch,
+  deleteVariantLine,
+  duplicateVariantLine,
   formatMovePrefix,
   getMainlineEndId,
   promoteVariation,
@@ -36,6 +42,7 @@ interface EditorViewProps {
   boardTheme: BoardThemeKey;
   onUpdateOpening: (updated: OpeningRepertoire) => void;
   onTrainOpening: (openingId: string, specificLine?: TrainingLine) => void;
+  onNotify?: (message: string) => void;
 }
 
 type PromotionChoice = 'q' | 'r' | 'b' | 'n';
@@ -45,6 +52,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
   boardTheme,
   onUpdateOpening,
   onTrainOpening,
+  onNotify,
 }) => {
   const [currentNodeId, setCurrentNodeId] = useState<string>(opening.rootId);
   const [flipped, setFlipped] = useState(false);
@@ -52,14 +60,17 @@ export const EditorView: React.FC<EditorViewProps> = ({
   const [promotionPiece, setPromotionPiece] = useState<PromotionChoice>('q');
   const [copiedFen, setCopiedFen] = useState(false);
   const [boardWidth, setBoardWidth] = useState(480);
+  const [pendingVariantName, setPendingVariantName] = useState<string | null>(null);
+  const [importFolderPgnOpen, setImportFolderPgnOpen] = useState(false);
 
   const boardContainerRef = useRef<HTMLDivElement>(null);
 
-  // Quando cambia apertura, riposiziona sulla radice (o sulla fine della linea principale se preferito; partiamo dalla radice)
+  // Quando cambia apertura, riposiziona sulla radice e resetta eventuali bozze
   useEffect(() => {
     setCurrentNodeId(opening.rootId);
     setSelectedSquare(null);
     setFlipped(false);
+    setPendingVariantName(null);
   }, [opening.id, opening.rootId]);
 
   // Se il nodo corrente non esiste più (es. dopo delete), torna a rootId
@@ -104,8 +115,15 @@ export const EditorView: React.FC<EditorViewProps> = ({
       });
       if (!res) return false;
 
-      if (res.opening !== opening) {
-        onUpdateOpening(res.opening);
+      let nextOpening = res.opening;
+      if (res.isNewMove && pendingVariantName) {
+        nextOpening = renameNodeLine(nextOpening, res.targetNodeId, pendingVariantName);
+        setPendingVariantName(null);
+        onNotify?.(`Variante "${pendingVariantName}" avviata.`);
+      }
+
+      if (nextOpening !== opening) {
+        onUpdateOpening(nextOpening);
       }
       setCurrentNodeId(res.targetNodeId);
       setSelectedSquare(null);
@@ -119,7 +137,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
       }
       return true;
     },
-    [opening, activeNodeId, promotionPiece, onUpdateOpening]
+    [opening, activeNodeId, promotionPiece, pendingVariantName, onUpdateOpening, onNotify]
   );
 
   const onPieceDrop = useCallback(
@@ -255,6 +273,48 @@ export const EditorView: React.FC<EditorViewProps> = ({
     setSelectedSquare(null);
   };
 
+  const handleDeleteVariant = (leafNodeId: string) => {
+    const { opening: nextOp, fallbackNodeId } = deleteVariantLine(opening, leafNodeId);
+    onUpdateOpening(nextOp);
+    setCurrentNodeId(fallbackNodeId);
+    setSelectedSquare(null);
+    onNotify?.('Variante eliminata.');
+  };
+
+  const handleDuplicateVariant = (leafNodeId: string) => {
+    const res = duplicateVariantLine(opening, leafNodeId);
+    if (!res) return;
+    onUpdateOpening(res.opening);
+    setCurrentNodeId(res.newLeafId);
+    setSelectedSquare(null);
+    onNotify?.('Variante duplicata. Puoi rinominarla o modificarne le mosse.');
+  };
+
+  const handleStartNewVariant = (name: string) => {
+    setPendingVariantName(name);
+    setCurrentNodeId(opening.rootId);
+    setSelectedSquare(null);
+    soundEngine.playMove();
+  };
+
+  const handleImportFolderPgn = (data: { pgn: string; variantName: string }) => {
+    const res = mergePgnIntoOpening(opening, data.pgn, {
+      defaultVariantName: data.variantName,
+    });
+    if (res.importedGamesCount === 0) {
+      onNotify?.('Nessuna mossa valida trovata nel PGN.');
+      return;
+    }
+    onUpdateOpening(res.opening);
+    setCurrentNodeId(res.lastNodeId);
+    setSelectedSquare(null);
+    onNotify?.(
+      `Importate ${res.importedMovesCount} nuove mosse (${res.importedGamesCount} ${
+        res.importedGamesCount === 1 ? 'linea' : 'linee'
+      }) in "${opening.name}".`
+    );
+  };
+
   const quickCommentTag = (prefix: string) => {
     const current = currentNode.comment;
     const next = current.trim() ? `${current}\n${prefix}: ` : `${prefix}: `;
@@ -274,6 +334,26 @@ export const EditorView: React.FC<EditorViewProps> = ({
           ref={boardContainerRef}
           className="flex w-full max-w-[600px] flex-col items-center rounded-2xl border border-[#32302a] bg-[#1e1d1a] p-4 shadow-xl"
         >
+          {/* Banner registrazione nuova variante manuale */}
+          {pendingVariantName && (
+            <div className="mb-3 flex w-full items-center justify-between gap-2 rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200">
+              <div className="min-w-0">
+                <span className="font-semibold">Nuova variante: «{pendingVariantName}»</span>
+                <p className="text-[11px] text-emerald-300/80">
+                  Gioca le mosse sulla scacchiera: verrà salvata appena crei la prima nuova mossa o diramazione.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPendingVariantName(null)}
+                className="shrink-0 rounded-lg p-1 text-emerald-300 hover:bg-emerald-500/20"
+                title="Annulla bozza"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          )}
+
           {/* Barra stato turno */}
           <div className="mb-3 flex w-full items-center justify-between text-xs">
             <div className="flex items-center gap-2">
@@ -429,8 +509,9 @@ export const EditorView: React.FC<EditorViewProps> = ({
                 <span className="text-xs text-stone-400">{opening.folder}</span>
               </div>
 
-              <h1 className="mt-2 text-lg font-bold tracking-tight text-stone-100">
-                {opening.name}
+              <h1 className="mt-2 flex items-center gap-2 text-lg font-bold tracking-tight text-stone-100">
+                <FolderOpen className="h-4 w-4 shrink-0 text-amber-400" />
+                <span className="truncate">{opening.name}</span>
               </h1>
               {opening.description && (
                 <p className="mt-1 text-xs leading-relaxed text-stone-400">
@@ -439,19 +520,29 @@ export const EditorView: React.FC<EditorViewProps> = ({
               )}
             </div>
 
-            <button
-              type="button"
-              onClick={() => onTrainOpening(opening.id)}
-              disabled={stats.linesCount === 0}
-              className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-emerald-500 px-3.5 py-2 text-xs font-bold text-stone-950 shadow-lg shadow-emerald-500/10 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              <Play className="h-3.5 w-3.5 fill-current" />
-              Allena ({stats.linesCount})
-            </button>
+            <div className="flex shrink-0 flex-col items-end gap-1.5">
+              <button
+                type="button"
+                onClick={() => onTrainOpening(opening.id)}
+                disabled={stats.linesCount === 0}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-500 px-3.5 py-2 text-xs font-bold text-stone-950 shadow-lg shadow-emerald-500/10 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <Play className="h-3.5 w-3.5 fill-current" />
+                Allena ({stats.linesCount})
+              </button>
+              <button
+                type="button"
+                onClick={() => setImportFolderPgnOpen(true)}
+                className="inline-flex items-center gap-1 rounded-lg border border-[#32302a] bg-[#242320] px-2.5 py-1 text-[11px] font-medium text-sky-300 transition hover:border-sky-400/50"
+              >
+                <FileUp className="h-3 w-3" />
+                Importa PGN
+              </button>
+            </div>
           </div>
         </div>
 
-        {/* Albero delle Varianti */}
+        {/* Cartella Varianti & Albero Mosse */}
         <MoveTreePanel
           opening={opening}
           currentNodeId={activeNodeId}
@@ -461,9 +552,13 @@ export const EditorView: React.FC<EditorViewProps> = ({
             soundEngine.playMove();
           }}
           onDeleteBranch={handleDeleteBranch}
+          onDeleteVariant={handleDeleteVariant}
+          onDuplicateVariant={handleDuplicateVariant}
           onPromoteVariation={(id) => onUpdateOpening(promoteVariation(opening, id))}
           onRenameNodeLine={(id, name) => onUpdateOpening(renameNodeLine(opening, id, name))}
           onTrainSpecificLine={(line) => onTrainOpening(opening.id, line)}
+          onStartNewVariant={handleStartNewVariant}
+          onOpenImportPgn={() => setImportFolderPgnOpen(true)}
         />
 
         {/* Pannello Annotazione & Nome Linea */}
@@ -533,6 +628,12 @@ export const EditorView: React.FC<EditorViewProps> = ({
           </div>
         </div>
       </div>
+      <ImportPgnIntoFolderModal
+        open={importFolderPgnOpen}
+        openingName={opening.name}
+        onClose={() => setImportFolderPgnOpen(false)}
+        onImport={handleImportFolderPgn}
+      />
     </div>
   );
 };

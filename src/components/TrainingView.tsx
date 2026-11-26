@@ -6,7 +6,10 @@ import {
   ArrowRight,
   Award,
   CheckCircle2,
+  ChevronDown,
+  ChevronRight,
   Flame,
+  FolderOpen,
   Lightbulb,
   MessageSquare,
   RotateCcw,
@@ -61,7 +64,15 @@ export const TrainingView: React.FC<TrainingViewProps> = ({
       ? initialOpeningId
       : trainableOpenings[0]?.id ?? ''
   );
-  const [selectedLineId, setSelectedLineId] = useState<string>(initialLineId ?? 'ALL');
+  const [expandedOpeningId, setExpandedOpeningId] = useState<string>(
+    initialOpeningId && trainableOpenings.some((o) => o.id === initialOpeningId)
+      ? initialOpeningId
+      : trainableOpenings[0]?.id ?? ''
+  );
+  const [selectedLineIds, setSelectedLineIds] = useState<string[]>(
+    initialLineId ? [initialLineId] : []
+  );
+  const [shuffleTargeted, setShuffleTargeted] = useState<boolean>(false);
   const [shuffleFilter, setShuffleFilter] = useState<ShuffleColorFilter>('both');
   const [autoAdvance, setAutoAdvance] = useState<boolean>(false);
   const [loopTargeted, setLoopTargeted] = useState<boolean>(true);
@@ -163,7 +174,8 @@ export const TrainingView: React.FC<TrainingViewProps> = ({
     (
       mode: TrainingSubMode,
       opId: string,
-      lId: string,
+      lIds: string[],
+      sTargeted: boolean,
       sFilter: ShuffleColorFilter
     ) => {
       clearTimers();
@@ -171,7 +183,10 @@ export const TrainingView: React.FC<TrainingViewProps> = ({
       if (mode === 'targeted') {
         const op = trainableOpenings.find((o) => o.id === opId) ?? trainableOpenings[0];
         if (op) {
-          newQueue = buildTargetedQueue(op, lId === 'ALL' ? null : lId);
+          newQueue = buildTargetedQueue(op, {
+            lineIds: lIds.length > 0 ? lIds : null,
+            shuffleOrder: sTargeted,
+          });
         }
       } else {
         newQueue = buildShuffleQueue(trainableOpenings, sFilter);
@@ -191,9 +206,30 @@ export const TrainingView: React.FC<TrainingViewProps> = ({
 
   // Avvio iniziale e sincronizzazione quando cambia modalità/filtro
   useEffect(() => {
-    startSession(subMode, selectedOpeningId, selectedLineId, shuffleFilter);
+    startSession(subMode, selectedOpeningId, selectedLineIds, shuffleTargeted, shuffleFilter);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [subMode, selectedOpeningId, selectedLineId, shuffleFilter]);
+  }, [subMode, selectedOpeningId, selectedLineIds, shuffleTargeted, shuffleFilter]);
+
+  const toggleLineSelection = (openingId: string, lineId: string) => {
+    if (selectedOpeningId !== openingId) {
+      setSelectedOpeningId(openingId);
+      setSelectedLineIds([lineId]);
+      return;
+    }
+    setSelectedLineIds((prev) =>
+      prev.includes(lineId) ? prev.filter((id) => id !== lineId) : [...prev, lineId]
+    );
+  };
+
+  const selectSingleLine = (openingId: string, lineId: string) => {
+    setSelectedOpeningId(openingId);
+    setSelectedLineIds([lineId]);
+  };
+
+  const selectAllLinesInOpening = (openingId: string) => {
+    setSelectedOpeningId(openingId);
+    setSelectedLineIds([]);
+  };
 
   const activeLine = queue[lineIndex];
   const expectedNode: MoveNode | undefined = activeLine?.moves[stepIndex];
@@ -460,8 +496,8 @@ export const TrainingView: React.FC<TrainingViewProps> = ({
         >
           {/* Barra Linea Corrente & Progresso */}
           <div className="mb-3 flex w-full items-center justify-between gap-2 text-xs">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-1.5">
                 <span
                   className={`h-2.5 w-2.5 shrink-0 rounded-full ${
                     activeLine?.color === 'white'
@@ -472,10 +508,11 @@ export const TrainingView: React.FC<TrainingViewProps> = ({
                 <span className="truncate font-semibold text-stone-100">
                   {activeLine?.openingName}
                 </span>
+                <span className="text-stone-500">&rsaquo;</span>
+                <span className="truncate font-semibold text-sky-300">
+                  {activeLine?.lineName}
+                </span>
               </div>
-              <p className="mt-0.5 truncate text-[11px] text-sky-300">
-                {activeLine?.lineName}
-              </p>
             </div>
 
             <div className="shrink-0 rounded-xl bg-[#161512] px-3 py-1.5 font-mono text-xs font-semibold text-emerald-400">
@@ -586,57 +623,148 @@ export const TrainingView: React.FC<TrainingViewProps> = ({
 
           {subMode === 'targeted' ? (
             <div className="mt-3 space-y-2.5">
-              <div>
-                <label className="mb-1 block text-[11px] font-medium uppercase tracking-wider text-stone-400">
-                  Apertura
-                </label>
-                <select
-                  value={selectedOpening?.id ?? ''}
-                  onChange={(e) => {
-                    setSelectedOpeningId(e.target.value);
-                    setSelectedLineId('ALL');
-                  }}
-                  className="w-full rounded-xl border border-[#32302a] bg-[#161512] px-3 py-2 text-xs text-stone-100 focus:border-emerald-500 focus:outline-none"
-                >
-                  {trainableOpenings.map((op) => (
-                    <option key={op.id} value={op.id}>
-                      [{op.color === 'white' ? 'Bianco' : 'Nero'}] {op.name}
-                    </option>
-                  ))}
-                </select>
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-medium uppercase tracking-wider text-stone-400">
+                  Cartelle &amp; Varianti ({selectedOpening?.name})
+                </span>
+                {selectedOpeningLines.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => selectAllLinesInOpening(selectedOpening.id)}
+                    className="text-[11px] font-semibold text-emerald-400 hover:text-emerald-300"
+                  >
+                    {selectedLineIds.length === 0 ? 'Tutte selezionate' : 'Seleziona tutte'}
+                  </button>
+                )}
               </div>
 
-              <div>
-                <label className="mb-1 block text-[11px] font-medium uppercase tracking-wider text-stone-400">
-                  Linea / Variante
-                </label>
-                <select
-                  value={selectedLineId}
-                  onChange={(e) => setSelectedLineId(e.target.value)}
-                  className="w-full rounded-xl border border-[#32302a] bg-[#161512] px-3 py-2 text-xs text-stone-100 focus:border-emerald-500 focus:outline-none"
-                >
-                  <option value="ALL">
-                    Tutte le linee ({selectedOpeningLines.length})
-                  </option>
-                  {selectedOpeningLines.map((l, idx) => (
-                    <option key={l.id} value={l.id}>
-                      #{idx + 1} — {l.lineName} ({l.moves.length} semimosse)
-                    </option>
-                  ))}
-                </select>
+              <div className="max-h-52 space-y-1.5 overflow-y-auto pr-1">
+                {trainableOpenings.map((op) => {
+                  const opLines = extractLines(op);
+                  const isExpanded = expandedOpeningId === op.id;
+                  const isActiveOpening = selectedOpening?.id === op.id;
+                  const allSelectedInOp = isActiveOpening && selectedLineIds.length === 0;
+
+                  return (
+                    <div
+                      key={op.id}
+                      className={`rounded-xl border transition ${
+                        isActiveOpening
+                          ? 'border-emerald-500/45 bg-[#232520]'
+                          : 'border-[#32302a] bg-[#161512]'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2 px-2.5 py-2">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setExpandedOpeningId((prev) => (prev === op.id ? '' : op.id))
+                          }
+                          className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+                        >
+                          {isExpanded ? (
+                            <ChevronDown className="h-3.5 w-3.5 shrink-0 text-stone-400" />
+                          ) : (
+                            <ChevronRight className="h-3.5 w-3.5 shrink-0 text-stone-400" />
+                          )}
+                          <FolderOpen className="h-3.5 w-3.5 shrink-0 text-amber-400" />
+                          <span
+                            className={`h-2 w-2 shrink-0 rounded-full ${
+                              op.color === 'white'
+                                ? 'bg-stone-100'
+                                : 'bg-stone-900 ring-1 ring-stone-500'
+                            }`}
+                          />
+                          <span className="truncate text-xs font-semibold text-stone-100">
+                            {op.name}
+                          </span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setExpandedOpeningId(op.id);
+                            selectAllLinesInOpening(op.id);
+                          }}
+                          className={`shrink-0 rounded-lg px-2 py-0.5 text-[10px] font-semibold transition ${
+                            allSelectedInOp
+                              ? 'bg-emerald-500 text-stone-950'
+                              : 'bg-[#242320] text-stone-300 hover:bg-[#2d2b27]'
+                          }`}
+                        >
+                          Tutte ({opLines.length})
+                        </button>
+                      </div>
+
+                      {isExpanded && (
+                        <div className="space-y-1 border-t border-[#32302a]/80 px-2.5 py-2">
+                          {opLines.map((l, idx) => {
+                            const isChecked =
+                              isActiveOpening &&
+                              (selectedLineIds.length === 0 || selectedLineIds.includes(l.id));
+                            const isSingleActive =
+                              isActiveOpening &&
+                              selectedLineIds.length === 1 &&
+                              selectedLineIds[0] === l.id;
+
+                            return (
+                              <div
+                                key={l.id}
+                                className={`flex items-center justify-between gap-2 rounded-lg px-2 py-1 text-xs transition ${
+                                  isSingleActive
+                                    ? 'bg-emerald-500/15 text-emerald-200'
+                                    : 'hover:bg-[#242320] text-stone-300'
+                                }`}
+                              >
+                                <div className="flex min-w-0 flex-1 items-center gap-2">
+                                  <input
+                                    type="checkbox"
+                                    checked={isChecked}
+                                    onChange={() => toggleLineSelection(op.id, l.id)}
+                                    className="rounded border-stone-600 bg-[#161512] text-emerald-500 focus:ring-0"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => selectSingleLine(op.id, l.id)}
+                                    title="Allena solo questa variante"
+                                    className="truncate text-left font-medium hover:text-emerald-300"
+                                  >
+                                    #{idx + 1} {l.lineName}
+                                  </button>
+                                </div>
+                                <span className="shrink-0 font-mono text-[10px] text-stone-500">
+                                  {l.moves.length}m
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
 
-              <div className="flex items-center justify-between pt-1 text-xs text-stone-400">
-                <label className="flex cursor-pointer items-center gap-2">
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-xs text-stone-400">
+                <label className="flex cursor-pointer items-center gap-1.5">
+                  <input
+                    type="checkbox"
+                    checked={shuffleTargeted}
+                    onChange={(e) => setShuffleTargeted(e.target.checked)}
+                    className="rounded border-stone-600 bg-[#161512] text-sky-400 focus:ring-0"
+                  />
+                  Ordine casuale
+                </label>
+                <label className="flex cursor-pointer items-center gap-1.5">
                   <input
                     type="checkbox"
                     checked={loopTargeted}
                     onChange={(e) => setLoopTargeted(e.target.checked)}
                     className="rounded border-stone-600 bg-[#161512] text-emerald-500 focus:ring-0"
                   />
-                  Ripeti in loop fino a memorizzazione
+                  Loop
                 </label>
-                <label className="flex cursor-pointer items-center gap-2">
+                <label className="flex cursor-pointer items-center gap-1.5">
                   <input
                     type="checkbox"
                     checked={autoAdvance}
@@ -676,7 +804,7 @@ export const TrainingView: React.FC<TrainingViewProps> = ({
                 <button
                   type="button"
                   onClick={() =>
-                    startSession('shuffle', selectedOpeningId, selectedLineId, shuffleFilter)
+                    startSession('shuffle', selectedOpeningId, selectedLineIds, shuffleTargeted, shuffleFilter)
                   }
                   className="inline-flex items-center gap-1.5 rounded-xl border border-[#32302a] bg-[#242320] px-3 py-2 text-xs font-medium text-sky-300 transition hover:border-sky-400/50"
                 >
@@ -741,7 +869,7 @@ export const TrainingView: React.FC<TrainingViewProps> = ({
               <button
                 type="button"
                 onClick={() =>
-                  startSession(subMode, selectedOpeningId, selectedLineId, shuffleFilter)
+                  startSession(subMode, selectedOpeningId, selectedLineIds, shuffleTargeted, shuffleFilter)
                 }
                 className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-emerald-500 px-4 py-2 text-xs font-bold text-stone-950 hover:bg-emerald-400"
               >
